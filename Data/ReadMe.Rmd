@@ -1,0 +1,26 @@
+---
+title: 'Deliverable 1: Data Set'
+author: "Reagan Kinsey"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Data Source: [Students Performance in Exams](https://www.kaggle.com/datasets/spscientist/students-performance-in-exams)
+
+```{r}
+data <- read.csv("C:\\Users\\reaga\\Downloads\\archive (2)\\StudentsPerformance.csv")
+```
+
+```{r}
+summary(data)
+```
+
+```{r}
+head(data)
+```
+
+The data set I've chosen is randomly generated and aims to investigate a connection between the influence of factors like the parents background and test preparation on a students exam performance. There are 5 categorical variables, 3 numerical variables, and 1000 observations! 
