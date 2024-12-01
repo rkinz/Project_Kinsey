@@ -1,0 +1,807 @@
+---
+title: "Analyzing the Impact of Socioeconomic Factors on Student Exam Performance"
+author: "Reagan Kinsey"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+
+```{r, message=FALSE}
+library(tidyverse)  #includes ggplot2, dplyr, tidyr, etc.
+library(knitr)      #for rendering report
+library(kableExtra) #for custom table display
+library(gridExtra)  #for custom table display
+library(mosaic)     #for statistical modeling
+library(broom)      #for tidying model outputs
+```
+
+# Summary
+
+We compared student exam scores for math, reading, and writing to understand the relationship between external factors and exam performance. The external factors highlighted in this report are completion of a test preparation course, lunch status, and parental education levels. We chose lunch status and parental education because these factors could indicate disadvantaged backgrounds. Our results suggest that test preparation courses, lunch status, and parental education are significant predictors of student performance, with varying degrees of influence across subjects.
+  
+Identifying areas of concern or attributes that indicate low performance could help reform the education system by providing educators and officials with a better understanding of a student's background and its effect on their academic career. Schools with high populations of 'disadvantaged' students could receive more funding to offer after-school programs that cater to areas of concern, like tutoring or youth clubs.
+
+# Purpose
+
+Education is crucial in socialization, social integration, social control, and economic development (Nickerson, 2024). However, test scores often determine a student's performance, knowledge, and development. Studies show that high-stakes tests increase the amount of cortisol in the body, which affects performance. Students with disadvantaged backgrounds experience the highest change in cortisol levels during these times (Tatter, 2019).
+  
+Many internal and external factors can influence academic performance, and some may go unnoticed. Identifying an association between internal/external factors and a student's exam performance could help to transform further and improve the education system.
+ 
+The main goal of this project is to find associations between internal/external factors, expected amounts of cortisol, and a student's performance on exams. The secondary goal for this project is to find if a student's exam scores are independent of each other. Knowing the relationship between performance in different subjects could further prove an association.
+
+# Data
+
+```{r}
+data <- read.csv("C:\\Users\\reaga\\Downloads\\archive (2)\\StudentsPerformance.csv")
+```
+
+## Organization
+
+The data set contains 1000 observations and eight features. Each observation represents a single student. Definitions of the features are as follows:
+
+- gender: gender of student (male or female); categorical, nominal
+- race.ethnicity: race or ethnicity of student (group A-D available, specifics of groups unknown to avoid feedback loop); categorical, nominal
+- parental.level.of.education: student's parent's education level (highest level); categorical, ordinal
+- lunch: student's lunch plan (free/reduced or standard); categorical, nominal
+- test.preparation.course: test preparation completed by the student (none or completed); categorical, nominal
+- math.score: student's math exam score (integer values); numerical, discrete
+- reading.score: student's reading exam score (integer values); numerical, discrete
+- writing score: student's writing exam score (integer values); numerical, discrete
+
+```{r}
+#Table for `data` (3 rows)
+kable(head(data, 3), format = "html", caption = "First 3 Rows of Data") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkorange")
+```
+
+In this analysis, we will assume discrete values represent percentages.
+
+The data set contains categorical and numerical data and has no missing values. Categorical data is all uniform within features, allowing for easy use and manipulation. Similarly, all numerical data is discrete and does not include special characters, allowing for easy comparison and use. We expect this because the data set is computer-generated.
+
+## Reformatting
+
+For convenience in visualization, we will make the data longer using the `pivot_longer()` function. Instead of having variables for math, reading, and writing exam scores, we will have a single variable named `subject` populated with the subjects. A new column named `score` will be populated with the values of the original three subject columns. The final result of this code block will create a new data frame where we represent each student as three observations: the subject of the exam and the corresponding score.
+
+```{r}
+data_long <- data %>%   #creating a new data frame from the original
+  pivot_longer(cols = c(math.score, reading.score, writing.score),  #take the specified columns
+               names_to = "subject",    #their names fill the subject column
+               values_to = "score")   #their values fill the score column
+```
+
+```{r}
+#Table for `data_long` (9 rows)
+kable(head(data_long, 9), format = "html", caption = "First 9 Rows of Long Data") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkorange")
+```
+
+# Exploratory Data Analysis
+
+## Overview
+
+### Medians, Variance, and Extrema 
+
+```{r, fig.align = 'center'}
+#Side by Side Boxplots for Exam Scores
+##created with the help of ChatGPT
+
+data_long %>%   ###pull data from data_long
+  ggplot(aes(x = subject, y = score, fill = subject)) +   ###x-axis will be from the `subject` column, y-axis will be from `score` column, boxes will be filled according to subject
+  geom_boxplot(outlier.color = "brown1", outlier.shape = 16) +   ###create boxplots, make outliers stand out
+  labs(
+    title = "Distribution of Scores by Subject",   ###add labels
+    x = "Subject",
+    y = "Score"
+  ) +
+  scale_x_discrete(labels = c("math.score" = "Math", 
+                              "reading.score" = "Reading", 
+                              "writing.score" = "Writing")) +  
+  scale_fill_manual(values = c("math.score" = "darkolivegreen",    ###assign colors to subject
+                              "reading.score" = "darkolivegreen4",
+                              "writing.score" = "darkolivegreen3")) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14),   ###adjust labels
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12),
+    axis.text.x = element_text(size = 10),
+    legend.position = "none"   ###hide legend
+  )
+```
+
+> The IQR for each subject is similar, suggesting no substantial variation in exam scores for most of the population. However, the boxplots for all three subject exams have outliers that fall below the lower whisker. While the reading and writing scores' outliers appear to be moderate, the math score has two extreme outliers. These outliers suggest a negative skew, though the median and mean values are similar within the subjects. The clustering of the outliers below the first quartile could suggest a subset of students with similar characteristics.
+
+### Distribution and Spread
+
+```{r, fig.align = 'center'}
+#Faceted Histograms for Exam Scores
+##created with the help of ChatGPT
+
+data_long %>%   ###pull data from data_long
+ggplot(aes(x = score, fill = subject)) +   ###x-axis will be from the `score` column, bars will be filled according to subject
+  geom_histogram(binwidth = 5, color = "black") +   ###create histogram
+  labs(
+    title = "Distribution of Scores by Subject",   ###add labels
+    x = "Score",
+    y = "Frequency"
+  ) +
+  facet_wrap(~ subject, scales = "free", ncol = 3, labeller = labeller(subject = c(
+    "math.score" = "Math",     ###displays graphs in a single line for easy comparison and renames labels
+    "reading.score" = "Reading", 
+    "writing.score" = "Writing"
+  ))) +
+  scale_fill_manual(values = c("math.score" = "darkolivegreen",   ###assign colors to subject
+                              "reading.score" = "darkolivegreen4",
+                              "writing.score" = "darkolivegreen3")) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14),   ###adjust labels
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12),
+    strip.text = element_text(size = 12),
+    legend.position = "none"   ###hide legend
+  )
+```
+
+> The distribution of exam scores across all subjects for the entire data set is slightly right-skewed, with the highest concentration of scores happening between 65 and 70. Further, all distributions appear almost normal with moderate spreads; the reading exam score histogram is bimodal, with a significant drop between the two peaks at around 67. The characteristics of the histograms could further suggest a subset of students with similar characteristics.
+
+```{r}
+overview_mean_median <- data_long %>% #creating a new data frame from the original
+  group_by(subject) %>% #group by subject
+  summarise(
+    mean_score = mean(score), #find mean score for each subject
+    median_score = median(score) #find median score for each subject
+  )
+```
+
+```{r}
+#Table for `overview_mean_median`
+overview_mean_median %>%
+kable(format = "html", caption = "Mean and Median Exam Scores, by Subject", col.names = c("Subject", "Mean Score", "Median Score")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkorange3")
+```
+
+## Deeper Data Visualization
+
+### Test Preparation
+
+```{r, fig.align = 'center'}
+#Side by Side Boxplots for Exam Scores
+##created with the help of ChatGPT
+
+data_long %>%   ###pull data from data_long
+  ggplot(aes(x = subject, y = score, fill = subject)) +   ###x-axis will be from the `subject` column, y-axis will be from `score` column, boxes will be filled according to subject
+  geom_boxplot(outlier.color = "brown1", outlier.shape = 16) +   ###create boxplots, make outliers stand out
+  labs(
+    title = "Distribution of Scores, by Subject and Test Preparation Course",   ###add labels
+    x = "Subject",
+    y = "Score"
+  ) +
+  scale_x_discrete(labels = c("math.score" = "Math", 
+                              "reading.score" = "Reading", 
+                              "writing.score" = "Writing")) +
+  scale_fill_manual(values = c("math.score" = "darkolivegreen",    ###assign colors to subject
+                              "reading.score" = "darkolivegreen4",
+                              "writing.score" = "darkolivegreen3")) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14),   ###adjust labels
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12),
+    axis.text.x = element_text(size = 10),
+    legend.position = "none"   ###hide legend
+  ) +
+  facet_wrap(~ test.preparation.course, labeller = labeller(test.preparation.course = c(
+    "completed" = "Completed",     ###rename facets
+    "none" = "Not Completed"
+  )))
+```
+
+> The IQR for each subject within each facet is similar, suggesting no substantial variation in exam scores for most of the population. The boxplot to the left (Completed) has few outliers near the first quartiles for the math and writing scores, whereas the boxplot to the right (Not Completed) has more extreme outliers in all subjects, with some clustering. These outliers suggest a negative skew, though the median and mean values are similar within the subjects. Clustering the outliers below the first quartiles in the boxplot representing students who did not complete the test preparation course could suggest a subset of students with similar characteristics.
+
+```{r}
+test_prep_mean_median <- data_long %>% #creating a new data frame from `data_long`
+  group_by(test.preparation.course, subject) %>% #group by prep and subject
+  summarise(
+    mean_score = mean(score), #find mean score for each subject
+    median_score = median(score), #find median score for each subject
+    .groups = "drop" #remove grouping
+  )
+```
+
+```{r}
+#Table for `test_prep_mean_median`
+test_prep_mean_median %>%
+kable(format = "html", caption = "Mean and Median Exam Scores, by Subject and Test Preparation Course", 
+      col.names = c("Test Preparation Course", "Subject", "Mean Score", "Median Score")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkorange3")
+```
+
+#### Statistical Testing
+
+We will use linear regression to understand better the relationship between the test preparation course and exam outcome. Below are our hypotheses:
+
+- $H_0$: The test preparation course does not affect math, reading, and writing exam scores
+- $H_A$: The test preparation course does affect math, reading, and writing exam scores
+
+```{r}
+#ChatGPT was used to include t-values and R^2 values in final kable table
+
+#Change test.prep to numeric
+##completed = 1, none = 0
+data$test.preparation.course <- ifelse(data$test.preparation.course == "completed", 1, 0)
+
+#Use linear regression on each subject
+test_prep_lm_math <- lm(math.score ~ test.preparation.course, data = data)
+test_prep_lm_reading <- lm(reading.score ~ test.preparation.course, data = data)
+test_prep_lm_writing <- lm(writing.score ~ test.preparation.course, data = data)
+
+#Tidy model results
+##Cleaner display
+tidy_test_prep_lm_math <- tidy(test_prep_lm_math)
+tidy_test_prep_lm_reading <- tidy(test_prep_lm_reading)
+tidy_test_prep_lm_writing <- tidy(test_prep_lm_writing)
+
+#Summary of the models
+summary_math_test_prep <- summary(test_prep_lm_math)
+summary_reading_test_prep <- summary(test_prep_lm_reading)
+summary_writing_test_prep <- summary(test_prep_lm_writing)
+
+#Get t and R^2 values
+t_values_math_test_prep <- summary_math_test_prep$coefficients[, "t value"]
+t_values_reading_test_prep <- summary_reading_test_prep$coefficients[, "t value"]
+t_values_writing_test_prep <- summary_writing_test_prep$coefficients[, "t value"]
+
+r_squared_math_test_prep <- summary_math_test_prep$r.squared
+r_squared_reading_test_prep <- summary_reading_test_prep$r.squared
+r_squared_writing_test_prep <- summary_writing_test_prep$r.squared
+
+#Add values to the tidy models
+tidy_test_prep_lm_math$t_value <- c(t_values_math_test_prep[1], t_values_math_test_prep[2])  
+tidy_test_prep_lm_reading$t_value <- c(t_values_reading_test_prep[1], t_values_reading_test_prep[2])
+tidy_test_prep_lm_writing$t_value <- c(t_values_writing_test_prep[1], t_values_writing_test_prep[2])
+
+tidy_test_prep_lm_math$r_squared <- r_squared_math_test_prep
+tidy_test_prep_lm_reading$r_squared <- r_squared_reading_test_prep
+tidy_test_prep_lm_writing$r_squared <- r_squared_writing_test_prep
+
+#Assign name to each model
+tidy_test_prep_lm_math$model <- "Math"
+tidy_test_prep_lm_reading$model <- "Reading"
+tidy_test_prep_lm_writing$model <- "Writing"
+
+#Combine models
+lm_test_prep <- bind_rows(tidy_test_prep_lm_math, tidy_test_prep_lm_reading, tidy_test_prep_lm_writing)
+```
+
+```{r}
+#Regression Results for Math (Test Preparation)
+lm_test_prep %>% 
+  filter(model == "Math") %>%
+  select(term, estimate, std.error, statistic, p.value, t_value, r_squared) %>%
+  kable(format = "html", caption = "Regression Results for Math (Test Preparation)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen")
+```
+
+> Completing the test preparation course has a statistically significant positive effect on math exam scores. It is associated with an increase of approximately 5.6 points.
+
+```{r}
+#Regression Results for Reading (Test Preparation)
+lm_test_prep %>% 
+  filter(model == "Reading") %>%
+  select(term, estimate, std.error, statistic, p.value, t_value, r_squared) %>%
+  kable(format = "html", caption = "Regression Results for Reading (Test Preparation)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen4")
+```
+
+> Completing the test preparation course has a statistically significant positive effect on reading exam scores. It is associated with an increase of approximately 7.4 points.
+
+```{r}
+#Regression Results for Writing (Test Preparation)
+lm_test_prep %>% 
+  filter(model == "Writing") %>%
+  select(term, estimate, std.error, statistic, p.value, t_value, r_squared) %>%
+  kable(format = "html", caption = "Regression Results for Writing (Test Preparation)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen3")
+```
+
+> Completing the test preparation course has a statistically significant positive effect on writing exam scores. It is associated with an increase of approximately 9.9 points.
+
+We will generate confidence intervals to understand better the actual effect of test preparation on exam scores.
+
+```{r}
+#Create confidence intervals for each subject
+test_prep_lm_math_conf <- confint(test_prep_lm_math)
+test_prep_lm_reading_conf <- confint(test_prep_lm_reading)
+test_prep_lm_writing_conf <- confint(test_prep_lm_writing)
+
+#Convert to data frame
+test_prep_lm_math_conf <- as.data.frame(test_prep_lm_math_conf)
+test_prep_lm_reading_conf <- as.data.frame(test_prep_lm_reading_conf)
+test_prep_lm_writing_conf <- as.data.frame(test_prep_lm_writing_conf)
+```
+
+```{r}
+#Confidence Interval for Math (Test Preparation)
+test_prep_lm_math_conf %>%
+  kable(format = "html", caption = "Confidence Intervals for Math Score Model (Test Preparation)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen")
+```
+
+> At the 95% confidence interval, we can say the true effect test preparation has on math exam scores is between 3.685 points and 7.550 points.
+
+```{r}
+#Confidence Interval for Reading (Test Preparation)
+test_prep_lm_reading_conf %>%
+  kable(format = "html", caption = "Confidence Intervals for Reading Score Model (Test Preparation)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen4")
+```
+
+> At the 95% confidence interval, we can say the true effect test preparation has on reading exam scores is between 5.525 points and 9.194 points.
+
+```{r}
+#Confidence Interval for Writing (Test Preparation)
+test_prep_lm_writing_conf %>%
+  kable(format = "html", caption = "Confidence Intervals for Writing Score Model (Test Preparation)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen3")
+```
+
+> At the 95% confidence interval, we can say the true effect test preparation has on writing exam scores is between 8.045 points and 11.783 points. 
+
+### Lunch Status
+
+```{r, fig.align = 'center'}
+#Side by Side Boxplots for Exam Scores
+##created with the help of ChatGPT
+
+data_long %>%   ###pull data from data_long
+  ggplot(aes(x = subject, y = score, fill = subject)) +   ###x-axis will be from the `subject` column, y-axis will be from `score` column, boxes will be filled according to subject
+  geom_boxplot(outlier.color = "brown1", outlier.shape = 16) +   ###create boxplots, make outliers stand out
+  labs(
+    title = "Distribution of Scores by Subject and Lunch Status",   ###add labels
+    x = "Subject",
+    y = "Score"
+  ) +
+  scale_x_discrete(labels = c("math.score" = "Math", 
+                              "reading.score" = "Reading", 
+                              "writing.score" = "Writing")) +  
+  scale_fill_manual(values = c("math.score" = "darkolivegreen",    ###assign colors to subject
+                              "reading.score" = "darkolivegreen4",
+                              "writing.score" = "darkolivegreen3")) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14),   ###adjust labels
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12),
+    axis.text.x = element_text(size = 10),
+    legend.position = "none"   ###hide legend
+  ) +
+  facet_wrap(~ lunch, labeller = labeller(lunch = c(
+    "free/reduced" = "Free/Reduced",     ###rename facets
+    "standard" = "Standard"
+  )))
+```
+
+> The median scores for the boxplot on the left (Free/Reduced) are lower than those on the right (Standard). This difference suggests that, on average, students with a standard lunch status perform better on exams than students with a free/reduced lunch status. While outliers are present in each subject, they are primarily in the mid-range and follow some clustering. However, there are two extreme outliers present in the math exam scores for the free/reduced lunch status. Further, the whisker lengths in the boxplot to the right are shorter than those in the boxplot to the left. This characteristic suggests less variance in students' exam scores of standard lunch status. The variance in the boxplot on the left suggests that this specific subset of students may share a common trait.
+
+```{r}
+lunch_mean_median <- data_long %>% #create new data frame from `data_long`
+  group_by(lunch, subject) %>% #group by lunch status and subject
+  summarise(
+    mean_score = mean(score), #find mean score for each subject
+    median_score = median(score), #find median score for each subject
+    .groups = "drop" #remove grouping
+  )
+```
+
+```{r}
+#Table for `lunch_mean_median`
+lunch_mean_median %>%
+kable(format = "html", caption = "Mean and Median Exam Scores, by Subject and Lunch Status", col.names = c("Lunch Status", "Subject", "Mean Score", "Median Score")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)  %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkorange3")
+```
+
+#### Statistical Testing
+
+We will use linear regression to understand better the relationship between lunch status and exam outcome. Below are our hypotheses:
+
+- $H_0$: Lunch status has no affect math, reading, and writing exam scores
+- $H_A$: Lunch status does affect math, reading, and writing exam scores
+
+```{r}
+#ChatGPT was used to include t-values and R^2 values in final kable table
+
+#Change lunch to numeric
+##completed = 1, none = 0
+data$lunch <- ifelse(data$lunch == "standard", 1, 0)
+
+#Use linear regression on each subject
+lunch_lm_math <- lm(math.score ~ lunch, data = data)
+lunch_lm_reading <- lm(reading.score ~ lunch, data = data)
+lunch_lm_writing <- lm(writing.score ~ lunch, data = data)
+
+#Tidy model results
+##Cleaner display
+tidy_lunch_lm_math <- tidy(lunch_lm_math)
+tidy_lunch_lm_reading <- tidy(lunch_lm_reading)
+tidy_lunch_lm_writing <- tidy(lunch_lm_writing)
+
+#Summary of the models
+summary_math_lunch <- summary(lunch_lm_math)
+summary_reading_lunch <- summary(lunch_lm_reading)
+summary_writing_lunch <- summary(lunch_lm_writing)
+
+#Get t and R^2 values
+t_values_math_lunch <- summary_math_lunch$coefficients[, "t value"]
+t_values_reading_lunch <- summary_reading_lunch$coefficients[, "t value"]
+t_values_writing_lunch <- summary_writing_lunch$coefficients[, "t value"]
+
+r_squared_math_lunch <- summary_math_lunch$r.squared
+r_squared_reading_lunch <- summary_reading_lunch$r.squared
+r_squared_writing_lunch <- summary_writing_lunch$r.squared
+
+#Add values to the tidy models
+tidy_lunch_lm_math$t_value <- c(t_values_math_lunch[1], t_values_math_lunch[2])
+tidy_lunch_lm_reading$t_value <- c(t_values_reading_lunch[1], t_values_reading_lunch[2])
+tidy_lunch_lm_writing$t_value <- c(t_values_writing_lunch[1], t_values_writing_lunch[2])
+
+tidy_lunch_lm_math$r_squared <- r_squared_math_lunch
+tidy_lunch_lm_reading$r_squared <- r_squared_reading_lunch
+tidy_lunch_lm_writing$r_squared <- r_squared_writing_lunch
+
+#Assign name to each model
+tidy_lunch_lm_math$model <- "Math"
+tidy_lunch_lm_reading$model <- "Reading"
+tidy_lunch_lm_writing$model <- "Writing"
+
+#Combine models
+lm_lunch <- bind_rows(tidy_lunch_lm_math, tidy_lunch_lm_reading, tidy_lunch_lm_writing)
+```
+
+```{r}
+#Regression Results for Math (Lunch)
+lm_lunch %>% 
+  filter(model == "Math") %>%
+  select(term, estimate, std.error, statistic, p.value, t_value, r_squared) %>%
+  kable(format = "html", caption = "Regression Results for Math (Lunch)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen")
+```
+
+> Standard lunch status has a statistically significant positive effect on math exam scores and is associated with an increase of approximately 11.1 points.
+
+```{r}
+#Regression Results for Reading (Lunch)
+lm_lunch %>% 
+  filter(model == "Reading") %>%
+  select(term, estimate, std.error, statistic, p.value, t_value, r_squared) %>%
+  kable(format = "html", caption = "Regression Results for Reading (Lunch)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen4")
+```
+
+> Standard lunch status has a statistically significant positive effect on writing exam scores and is associated with an increase of approximately 7.0 points.
+
+```{r}
+#Regression Results for Writing (Lunch)
+lm_lunch %>% 
+  filter(model == "Writing") %>%
+  select(term, estimate, std.error, statistic, p.value, t_value, r_squared) %>%
+  kable(format = "html", caption = "Regression Results for Writing (Lunch)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen3")
+```
+
+> Standard lunch status has a statistically significant positive effect on writing exam scores and is associated with an increase of approximately 7.8 points.
+
+We will generate confidence intervals to understand better the actual effect of lunch status on exam scores.
+
+```{r}
+#Create confidence intervals for each subject
+lunch_lm_math_conf <- confint(lunch_lm_math)
+lunch_lm_reading_conf <- confint(lunch_lm_reading)
+lunch_lm_writing_conf <- confint(lunch_lm_writing)
+
+#Convert to data frame
+lunch_lm_math_conf <- as.data.frame(lunch_lm_math_conf)
+lunch_lm_reading_conf <- as.data.frame(lunch_lm_reading_conf)
+lunch_lm_writing_conf <- as.data.frame(lunch_lm_writing_conf)
+```
+
+```{r}
+#Confidence Interval for Math (Lunch)
+lunch_lm_math_conf %>%
+  kable(format = "html", caption = "Confidence Intervals for Math Score Model (Lunch)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen")
+```
+
+> At the 95% confidence interval, we can say the true effect lunch status has on math exam scores is between 9.271 points and 12.955 points.
+
+```{r}
+#Confidence Interval for Reading (Lunch)
+lunch_lm_reading_conf %>%
+  kable(format = "html", caption = "Confidence Intervals for Reading Score Model (Lunch)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen4")
+```
+
+> At the 95% confidence interval, we can say the true effect lunch has on reading exam scores is between 5.157 points and 8.844 points.
+
+```{r}
+#Confidence Interval for Writing (Lunch)
+lunch_lm_writing_conf %>%
+  kable(format = "html", caption = "Confidence Intervals for Writing Score Model (Lunch)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen3")
+```
+
+> At the 95% confidence interval, we can say the true effect lunch has on writing exam scores is between 5.890 points and 9.712 points.
+
+### Parental Education
+
+```{r, fig.align = 'center'}
+#Side by Side Boxplots for Exam Scores
+##created with the help of ChatGPT
+
+data_long %>%   ###pull data from data_long
+  ggplot(aes(x = subject, y = score, fill = subject)) +   ###x-axis will be from the `subject` column, y-axis will be from `score` column, boxes will be filled according to subject
+  geom_boxplot(outlier.color = "brown1", outlier.shape = 16) +   ###create boxplots, make outliers stand out
+  labs(
+    title = "Distribution of Scores by Subject and Parental Level of Education",   ###add labels
+    x = "Subject",
+    y = "Score"
+  ) +
+  scale_x_discrete(labels = c("math.score" = "Math", 
+                              "reading.score" = "Reading", 
+                              "writing.score" = "Writing")) +  
+  scale_fill_manual(values = c("math.score" = "darkolivegreen",    ###assign colors to subject
+                              "reading.score" = "darkolivegreen4",
+                              "writing.score" = "darkolivegreen3")) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14),   ###adjust labels
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12),
+    axis.text.x = element_text(size = 10),
+    legend.position = "none"   ###hide legend
+  ) +
+  facet_wrap(~ parental.level.of.education, labeller = labeller(parental.level.of.education = c(
+    "associate's degree" = "Associate's Degree",     ###rename facets
+    "bachelor's degree" = "Bachelor's Degree",
+    "high school" = "High School",
+    "master's degree" = "Master's Degree",
+    "some college" = "Some College",
+    "some high school" = "Some High School"
+  )))
+```
+
+> The median exam scores across all subjects and facets are similar. However, whisker length, extrema, and IQR differ. The associate's and master's degree facets have no extreme values, though the math scores under those facets display more significant variance than others. While the bachelor's degree facet has a single outlier, the remaining three facets have more values that fall below the first quartile. These three subsets of students (students whose parents attended some high school, high school, or some college) could further suggest a trend.
+
+```{r}
+pe_mean_median <- data_long %>% #create new data frame from `data_long`
+  group_by(parental.level.of.education, subject) %>% #group by lunch status and subject
+  summarise(
+    mean_score = mean(score), #find mean score for each subject
+    median_score = median(score), #find median score for each subject
+    .groups = "drop" #remove grouping
+  )
+```
+
+```{r}
+pe_mean_median %>%
+kable(format = "html", caption = "Mean and Median Exam Scores, by Subject and Parental Level of Education", col.names = c("Parental Level of Education", "Subject", "Mean Score", "Median Score")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkorange3")
+```
+
+#### Statistical Testing
+
+We will use ANOVA testing to understand better the relationship between student exam scores and their parent's highest level of education. Let $\mu$ be the average difference in exam scores between students whose parents have differing levels of education. We will use a 5% confidence level. The test hypotheses are as follows:
+
+- $H_0$: $\mu_{math} = \mu_{reading} = \mu_{writing} = 0$
+- $H_A$: At least one $\mu \neq 0$
+
+```{r}
+#Change pe to factor
+data$parental.level.of.education <- factor(data$parental.level.of.education)
+
+#Perform ANOVA for each subject
+anova_math_pe <- aov(data$math.score ~ data$parental.level.of.education)
+anova_reading_pe <- aov(data$reading.score ~ data$parental.level.of.education)
+anova_writing_pe <- aov(data$writing.score ~ data$parental.level.of.education)
+```
+
+```{r}
+#ChatGPT was used to display ANOVA results in kable table
+
+#Summary for each model
+anova_math_summary <- summary(anova_math_pe)[[1]]
+anova_reading_summary <- summary(anova_reading_pe)[[1]]
+anova_writing_summary <- summary(anova_writing_pe)[[1]]
+
+#Convert to dataframe
+anova_math_df <- as.data.frame(anova_math_summary)
+anova_reading_df <- as.data.frame(anova_reading_summary)
+anova_writing_df <- as.data.frame(anova_writing_summary)
+
+#Assign name to each model
+anova_math_df$model <- "Math"
+anova_reading_df$model <- "Reading"
+anova_writing_df$model <- "Writing"
+
+#Combine models
+anova <- bind_rows(anova_math_df, anova_reading_df, anova_writing_df)
+```
+
+```{r}
+#Anova Results for Math
+anova %>%
+  filter(model == "Math") %>%
+  kable(format = "html", caption = "ANOVA Results for Math by Parental Education Level") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)%>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen")
+```
+
+```{r}
+#Anova Results for Reading
+anova %>%
+  filter(model == "Reading") %>%
+  kable(format = "html", caption = "ANOVA Results for Reading by Parental Education Level") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)%>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen4")
+```
+
+```{r}
+#Anova Results for Writing
+anova %>%
+  filter(model == "Writing") %>%
+  kable(format = "html", caption = "ANOVA Results for Writing by Parental Education Level") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)%>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen3")
+```
+
+> The p-value for each subject exam is less than the confidence level. Hence, we reject the null hypothesis in favor of the alternative. That is, with a confidence level of 0.05, statistically significant evidence shows a difference in exam scores between students whose parents have differing levels of education.
+
+Since ANOVA testing showed significant differences in averages, we will proceed with Tukey Honestly Significant Difference (Tukey HSD) testing in order to determine which parental education level(s) are significantly different. 
+
+```{r}
+#Perform THSD testing for each subject, assign to new data frame
+tukey_math_pe <- TukeyHSD(anova_math_pe)
+tukey_reading_pe <- TukeyHSD(anova_reading_pe)
+tukey_writing_pe <- TukeyHSD(anova_writing_pe)
+
+#Assign results to new data frame
+tukey_results_math <- tukey_math_pe$`data$parental.level.of.education`
+tukey_results_reading <- tukey_reading_pe$`data$parental.level.of.education`
+tukey_results_writing <- tukey_writing_pe$`data$parental.level.of.education`
+
+#Find only results with p < 0.05
+##Chat GPT was used for this step
+significant_results_math <- tukey_results_math[tukey_results_math[, "p adj"] < 0.05, ]
+significant_results_reading <- tukey_results_reading[tukey_results_reading[, "p adj"] < 0.05, ]
+significant_results_writing <- tukey_results_writing[tukey_results_writing[, "p adj"] < 0.05, ]
+
+#Convert to data frame
+significant_results_math_df <- as.data.frame(significant_results_math)
+significant_results_reading_df <- as.data.frame(significant_results_reading)
+significant_results_writing_df <- as.data.frame(significant_results_writing)
+
+#Assign name to each result
+significant_results_math_df$Subject <- "Math"
+significant_results_reading_df$Subject <- "Reading"
+significant_results_writing_df$Subject <- "Writing"
+
+#Combine results
+significant_results_combined <- bind_rows(significant_results_math_df, significant_results_reading_df, significant_results_writing_df)
+```
+
+```{r}
+#Tukey Results for Math (p < 0.05)
+significant_results_combined %>% 
+  filter(Subject == "Math") %>%
+  kable(format = "html", caption = "Tukey Results for Math") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen")
+```
+
+> These comparisons have an adjusted p-value less than 0.05, meaning the differences in exam scores between these parental education levels are unlikely to have occurred by chance. The highest average score difference is 7.61, meaning "master's degree" students score higher than "high school" students. The minor average score difference is -4.39, meaning "some high school" students score lower than "associate's degree" students. However, it is essential to note that some group comparison intervals include 0 or are close to 0, indicating that this difference may be due to random variation.
+
+```{r}
+#Tukey Results for Reading (p < 0.05)
+significant_results_combined %>% 
+  filter(Subject == "Reading") %>%
+  kable(format = "html", caption = "Tukey Results for Reading") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen4")
+```
+
+> These comparisons have an adjusted p-value less than 0.05, meaning the differences in exam scores between these parental education levels are unlikely to have occurred by chance. The highest average score difference is 10.67, meaning "master's degree" students score higher than "high school" students. The minor average score difference is 4.76, meaning "some college" students score higher than "high school" students. However, it is essential to note that some group comparison intervals include 0 or are close to 0, indicating that this difference may be due to random variation.
+
+```{r}
+#Tukey Results for Writing (p < 0.05)
+significant_results_combined %>% 
+  filter(Subject == "Writing") %>%
+  kable(format = "html", caption = "Tukey Results for Writing") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "darkolivegreen3")
+```
+
+> These comparisons have an adjusted p-value less than 0.05, meaning the differences in exam scores between these parental education levels are unlikely to have occurred by chance. The highest average score difference is 13.23, meaning "master's degree" students score higher than "high school" students. The minor average score difference is -5.01, meaning "some high school" students score lower than "associate's degree" students. However, it is essential to note that some group comparison intervals include 0 or are close to 0, indicating that this difference may be due to random variation.
+
+# Results
+
+## Test Preparation
+
+### Math
+
+We conducted a linear regression to examine the relationship between completing a test preparation course and students' math exam scores. The regression model showed that students who completed the test preparation course scored, on average, 5.6 points higher than those who did not. This effect was statistically significant, with a t-value of 5.70. The model explained 3.16% of the variance in math scores ($R^2 = 0.0316$).
+
+### Reading
+
+We conducted a linear regression to examine the relationship between completing a test preparation course and students' reading exam scores. The regression model showed that students who completed the test preparation course scored, on average, 7.4 points higher than those who did not. This effect was statistically significant, with a t-value of 7.87. The model explained 5.85% of the variance in reading scores ($R^2 = 0.0585$).
+
+### Writing
+
+We conducted a linear regression to examine the relationship between completing a test preparation course and students' writing exam scores. The regression model showed that students who completed the test preparation course scored, on average, 9.9 points higher than those who did not. This effect was statistically significant, with a t-value of 10.40. The model explained 9.79% of the variance in writing scores ($R^2 = 0.0979$).
+
+## Lunch Status
+
+### Math
+
+We conducted a linear regression to examine the relationship between lunch status and students' math exam scores. The regression model showed that students who received standard lunch scored, on average, 11.1 points higher than those who did not. This effect was statistically significant, with a t-value of 11.84. The model explained 12.31% of the variance in math scores ($R^2 = 0.1231$).
+
+### Reading
+
+We conducted a linear regression to examine the relationship between lunch status and students' reading exam scores. The regression model showed that students who received standard lunch scored, on average, 7.0 points higher than those who did not. This effect was statistically significant, with a t-value of 7.45. The model explained 5.23% of the variance in reading scores ($R^2 = 0.0523$).
+
+### Writing
+
+We conducted a linear regression to examine the relationship between lunch status and students' writing exam scores. The regression model showed that students who received standard lunch scored, on average, 7.8 points higher than those who did not. This effect was statistically significant, with a t-value of 8.01. The model explained 6.04% of the variance in writing scores ($R^2 = 0.0604$).
+
+## Parental Education Level
+
+### ANOVA
+
+We conducted ANOVA testing to examine the relationship between parental education level and students' exam scores. Testing revealed a statistically significant difference in averages of subject exam scores between parental education levels.
+
+### Tukey HSD
+
+We conducted a post-hoc comparison to examine which education level pairs experience significant differences for each subject. Between all groups, students whose parents have a master's degree and students whose parents have a high school education exhibit the most significant differences for each subject.
+
+# Conclusions
+
+This analysis provides valuable insights into the factors influencing student performance on exams. Evidence suggests that completing a test preparation course has a statistically significant positive effect on exam scores across all subjects, with the highest observed improvement in writing. Further, students who received standard lunch scored higher in all subjects, with the highest observed difference in math. Lastly, our analysis revealed that students whose parents earned a master's degree consistently outperformed those whose parents had only a high school education. The effects that lunch status and parental education have on student exam performance highlight socioeconomic status's impact on students.
+
+# References
+
+[ANOVA Test](https://www.datacamp.com/tutorial/anova-test)
+
+[Functionalist Perspective on Education](www.simplypsychology.org/functionalist-perspective-
+education.html#:~:text=Functionalists%20view%20education%20as%20a%20system%20that
+%20fulfills,and%20equips%20individuals%20with%20workforce%20skills%20%28economic
+%20development%29.)
+
+[kable()](https://bookdown.org/yihui/rmarkdown-cookbook/kable.html)
+
+[kableExtra](https://bookdown.org/yihui/rmarkdown-cookbook/kableextra.html)
+
+[Students Performance in Exams](https://www.kaggle.com/datasets/spscientist/students-performance-in-exams)
+
+[Tests and Stress Bias](www.gse.harvard.edu/ideas/usable-knowledge/19/02/tests-and-stress-bias.)
+
+[Tukey HSD](https://www.r-bloggers.com/2021/08/how-to-perform-tukey-hsd-test-in-r/)
